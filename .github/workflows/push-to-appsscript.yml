@@ -45,23 +45,6 @@ jobs:
           CLASP_ID_TOKEN: ${{ secrets.CLASP_ID_TOKEN }}
           CLASP_TOKEN_EXPIRY_DATE: ${{ secrets.CLASP_TOKEN_EXPIRY_DATE }}
 
-      - name: Validate clasp token JSON
-        run: |
-          node -e "const fs=require('fs'); const j=JSON.parse(fs.readFileSync(process.env.HOME+'/.clasprc.json','utf8')); const t=j.token||{}; console.log('has_access', !!t.access_token); console.log('has_refresh', !!t.refresh_token); console.log('expiry_type', typeof t.expiry_date); console.log('expiry_is_number', Number.isFinite(t.expiry_date));"
-
-      - name: Debug clasp credentials
-        run: |
-          echo "HOME=$HOME"
-          ls -la ~
-          echo "----- ~/.clasprc.json -----"
-          cat ~/.clasprc.json
-
-      - name: Debug clasp files
-        run: |
-          pwd
-          ls -la
-          ls -la ~ | grep clasprc || true
-
       - name: Push to Apps Script
         run: npx @google/clasp push -f
 
