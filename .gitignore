@@ -1,0 +1,10 @@
+# Apps Script / clasp credentials (never commit)
+.clasprc.json
+
+# Node
+node_modules/
+npm-debug.log*
+.DS_Store
+
+# Optional: local env
+.env

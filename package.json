@@ -1,0 +1,13 @@
+{
+  "name": "ca_dashboard",
+  "private": true,
+  "devDependencies": {
+    "@google/clasp": "^2.0.0"
+  },
+  "scripts": {
+    "clasp": "clasp",
+    "push": "clasp push",
+    "pull": "clasp pull",
+    "deploy": "clasp deploy"
+  }
+}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: Arial, sans-serif; padding: 12px 14px; color: #222; }
+      h2 { margin: 0 0 10px 0; font-size: 16px; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { padding: 6px 4px; border-bottom: 1px solid #e5e5e5; }
+      th { text-align: left; font-weight: 600; }
+      td.count { text-align: right; font-variant-numeric: tabular-nums; }
+      tr.total td { font-weight: 700; border-top: 2px solid #333; }
+      .error { color: #b00020; }
+    </style>
+  </head>
+  <body>
+    <h2>Project Stage Summary</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Stage</th>
+          <th class="count">Count</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+      <tfoot>
+        <tr class="total">
+          <td>Total</td>
+          <td class="count" id="total"></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <script>
+      google.script.run
+        .withSuccessHandler(function(data) {
+          const tbody = document.getElementById('rows');
+          tbody.innerHTML = '';
+          data.rows.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${r.stage}</td><td class="count">${r.count}</td>`;
+            tbody.appendChild(tr);
+          });
+          document.getElementById('total').textContent = data.total;
+        })
+        .withFailureHandler(function(err) {
+          const tbody = document.getElementById('rows');
+          tbody.innerHTML = `<tr><td colspan="2" class="error">${err.message || err}</td></tr>`;
+          document.getElementById('total').textContent = 'Error';
+        })
+        .getStageSummary();
+    </script>
+  </body>
+</html>
