@@ -1,0 +1,35 @@
+name: Push to Google Apps Script
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  clasp-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Write clasp credentials
+        run: |
+          cat > ~/.clasprc.json << 'JSON'
+          {
+            "token": {
+              "access_token": "${{ secrets.CLASP_ACCESS_TOKEN }}",
+              "refresh_token": "${{ secrets.CLASP_REFRESH_TOKEN }}",
+              "id_token": "${{ secrets.CLASP_ID_TOKEN }}",
+              "expiry_date": ${{ secrets.CLASP_TOKEN_EXPIRY_DATE }},
+              "token_type": "Bearer"
+            }
+          }
+          JSON
+
+      - name: Push to Apps Script
+        run: npx clasp push -f
