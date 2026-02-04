@@ -37,6 +37,7 @@ jobs:
             "isLocalCreds": false
           }
           JSON
+          cp ~/.clasprc.json ./.clasprc.json
 
       - name: Debug clasp credentials
         run: |
