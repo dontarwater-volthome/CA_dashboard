@@ -46,4 +46,7 @@ jobs:
           cat ~/.clasprc.json
 
       - name: Push to Apps Script
+        env:
+          CLASP_CONFIG_PATH: /home/runner/.clasprc.json
         run: npx @google/clasp push -f
+
