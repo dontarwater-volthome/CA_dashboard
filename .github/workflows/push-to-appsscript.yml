@@ -18,8 +18,10 @@ jobs:
         run: npm ci || npm install
 
       - name: Write clasp credentials
+        env:
+          EXPIRY: ${{ secrets.CLASP_TOKEN_EXPIRY_DATE }}
         run: |
-          cat > ~/.clasprc.json << 'JSON'
+          cat > ~/.clasprc.json << JSON
           {
             "token": {
               "access_token": "${{ secrets.CLASP_ACCESS_TOKEN }}",
@@ -27,17 +29,16 @@ jobs:
               "scope": "https://www.googleapis.com/auth/script.deployments https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/script.webapp.deploy https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/service.management https://www.googleapis.com/auth/logging.read https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cloud-platform openid",
               "token_type": "Bearer",
               "id_token": "${{ secrets.CLASP_ID_TOKEN }}",
-              "expiry_date": ${{ secrets.CLASP_TOKEN_EXPIRY_DATE }}
-            },
-            "oauth2ClientSettings": {
-              "clientId": "1072944905499-vm2v2i5dvn0a0d2o4ca36i1vge8cvbn0.apps.googleusercontent.com",
-              "clientSecret": "v6V3fKV_zWU7iw1DrpO1rknX",
-              "redirectUri": "http://localhost"
-            },
-            "isLocalCreds": false
+              "expiry_date": ${EXPIRY}
+            }
           }
           JSON
           cp ~/.clasprc.json ./.clasprc.json
+
+
+      - name: Validate clasp token JSON
+        run: |
+          node -e "const fs=require('fs'); const j=JSON.parse(fs.readFileSync(process.env.HOME+'/.clasprc.json','utf8')); const t=j.token||{}; console.log('has_access', !!t.access_token); console.log('has_refresh', !!t.refresh_token); console.log('expiry_type', typeof t.expiry_date); console.log('expiry_value_is_number', Number.isFinite(t.expiry_date));"
 
       - name: Debug clasp credentials
         run: |
