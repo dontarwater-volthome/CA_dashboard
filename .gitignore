@@ -8,3 +8,7 @@ npm-debug.log*
 
 # Optional: local env
 .env
+
+# Local stray files
+clear
+clear.pub
