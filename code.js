@@ -5,8 +5,7 @@
 
 // ============ CONFIG ============
 const HUBSPOT = {
-  // Optional inline token fallback (or leave blank to rely on Script Properties)
-  TOKEN_INLINE: PropertiesService.getScriptProperties().getProperty('hubspot_token'),
+  TOKEN_INLINE: "",
   ENABLE_CA_FILTER: true, // set to false to disable server-side CA filtering
   JOBS_OBJECT_TYPE_ID: '2-41941336',
   JOBS_PROPERTIES: [
@@ -15,7 +14,7 @@ const HUBSPOT = {
     'hs_object_id','job_name','job_agreement_date_1','system__size__watts_',
     'street_address','city','state','zip_code','service_area',
     'partner',
-    'amount','cashback','payment_method1',
+    'amount','cashback', 'payment_method1',
     'installation_status','utility_status',
     'battery_services_cost','dealerfee','adder_amount',
     'fulfillment_partnerfee','additional_services_price','collection_base_amount',
@@ -23,8 +22,8 @@ const HUBSPOT = {
     'materials_request','domestic_content','permit_fees__adder',
     'hs_pipeline_stage','hs_pipeline',
     'hvac_price','roof_price','water_filter_price','estimated_installation_costs',
-    'additional_services_amount','is_test',
-    'solar_roof_s__size__watts_','system_size__ton_','hvac_quantity',
+    'additional_services_amount','payment_method1','is_test',
+    'solar_roof_s__size__watts_','partner','system_size__ton_','hvac_quantity',
     'hvac_contract_value__view_only_','actual_stage','project_update','update_date',
     'date_entered__stand_by__stage','sales_team_take',
     'panel___brand__only_view_','panel___model__only_view_','panel_quantity__only_view_',
@@ -46,7 +45,7 @@ const HUBSPOT = {
     'hs_object_id','job_name','job_agreement_date_1','system__size__watts_',
     'street_address','city','state','zip_code','service_area',
     'partner',
-    'amount','payment_method1','cashback','installation_status','utility_status',
+    'amount', 'payment_method1','cashback','installation_status','utility_status',
     'panel___brand__only_view_','inverter___brand__only_view_','battery___brand__only_view_',
     'panel_quantity__only_view_','inverter_quantity__only_view_','battery_quantity__only_view_',
     'panel___model__only_view_','inverter___model__only_view_','battery___model__only_view_',
@@ -58,7 +57,7 @@ const HUBSPOT = {
     'permit_fees__adder','associated_deal_record_id','hs_pipeline_stage',
     'hs_pipeline','hvac_price','roof_price','water_filter_price',
     'estimated_installation_costs','additional_services_amount','is_test',
-    'roof_size__sq_','solar_roof_s__size__watts_',
+    'payment_method1','roof_size__sq_','solar_roof_s__size__watts_','partner',
     'system_size__ton_','hvac_quantity','hvac_contract_value__view_only_',
     'actual_stage','project_update','update_date','date_entered__stand_by__stage',
     'sales_team_take','m1_amount___paid','m1_amount','m2_amount',
@@ -78,6 +77,9 @@ const CONTACT_COLS = new Set([
   'firstname','lastname','full_name','email','phone','language_preference'
 ]);
 
+// Server-side state filter (temporary)
+const STATE_FILTER_VALUES = ['CA', 'California'];
+
 // ============ MENU ============
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -92,9 +94,7 @@ function syncHubSpotJobsAndDeals() {
   const token = getHubSpotToken_();
 
   // 1) Pipelines → translate ids to labels
-  const pipelineData = fetchPipelineLabels_(token, HUBSPOT.JOBS_OBJECT_TYPE_ID);
-  const pipelineMap = pipelineData.pipelineMap;
-  const stageMap = pipelineData.stageMap;
+  const { pipelineMap, stageMap } = fetchPipelineLabels_(token, HUBSPOT.JOBS_OBJECT_TYPE_ID);
 
   // 2) Pull Jobs (server-side filtered if enabled)
   const jobs = HUBSPOT.ENABLE_CA_FILTER
@@ -107,7 +107,7 @@ function syncHubSpotJobsAndDeals() {
   // 2.5) Pull Deals
   const deals = fetchHubspotData_(token, 'deals', HUBSPOT.DEALS_PROPERTIES);
 
-  // 3) Pull Contact Info (by associated_contact_record_id)
+  // 3) Pull Contact Info
   const jobContactIds = jobs
     .map(j => j.properties?.associated_contact_record_id)
     .filter(Boolean)
@@ -117,69 +117,69 @@ function syncHubSpotJobsAndDeals() {
   const contactsMap = fetchContactsByIds_(token, contactIds, HUBSPOT.CONTACT_PROPERTIES);
 
   // 4) Build Deal map
-  const dealsMap = new Map(deals.map(d => [String(d.id), d.properties || {}]));
+  const dealsMap = new Map(deals.map(d => [d.id, d.properties || {}]));
 
   // 5) Filter + combine
-  const combined = [];
-  for (let i = 0; i < jobs.length; i++) {
-    const job = jobs[i];
-
-    if (HUBSPOT.FILTER_PIPELINE_LABEL) {
-      const jp = job.properties || {};
-      const label = pipelineMap.get(jp.hs_pipeline) || jp.hs_pipeline;
-      if (label !== HUBSPOT.FILTER_PIPELINE_LABEL) continue;
-    }
-
-    const row = { id: job.id };
-    const jobProps = job.properties || {};
-    const contactId = jobProps.associated_contact_record_id ? String(jobProps.associated_contact_record_id) : null;
-    const contactProps = contactId ? (contactsMap.get(contactId) || {}) : {};
-    const dealId = jobProps.associated_deal_record_id ? String(jobProps.associated_deal_record_id) : null;
-    const dealProps = dealId ? (dealsMap.get(dealId) || {}) : {};
-
-    for (let f = 0; f < HUBSPOT.FINAL_ORDER.length; f++) {
-      const col = HUBSPOT.FINAL_ORDER[f];
-      let value;
-
-      if (CONTACT_COLS.has(col)) {
-        value = contactProps[col] != null ? contactProps[col] : '';
-      } else if (DEAL_COLS.has(col)) {
-        value = dealProps[col] != null ? dealProps[col] : '';
+  const combined = jobs
+    .filter(job => {
+      if (!HUBSPOT.FILTER_PIPELINE_LABEL) {
+        // no pipeline filter
       } else {
-        value = jobProps[col] != null ? jobProps[col] : '';
+        const label = pipelineMap.get(job.properties?.hs_pipeline) || job.properties?.hs_pipeline;
+        if (label !== HUBSPOT.FILTER_PIPELINE_LABEL) return false;
       }
+      return true;
+    })
+    .map(job => {
+      const row = { id: job.id };
+      const jobProps = job.properties || {};
+      const contactId = jobProps.associated_contact_record_id ? String(jobProps.associated_contact_record_id) : null;
+      const contactProps = contactId ? (contactsMap.get(contactId) || {}) : {};
+      const dealId   = jobProps.associated_deal_record_id || null;
+      const dealProps= dealId ? (dealsMap.get(dealId) || {}) : {};
 
-      if (col === 'full_name' && !value) {
-        value = buildFullName_(contactProps.firstname, contactProps.lastname);
-      }
-      if (col === 'phone' && value) {
-        value = normalizePhone_(value);
-      }
-      if (col === 'job_agreement_date_1' && value !== '' && value != null) {
-        value = parseAnyDate_(value);
-      }
-      if (col === 'state' && value) {
-        value = normalizeState_(value);
-      }
-      if (col === 'update_date' && value !== '' && value != null) {
-        value = parseAnyDate_(value);
-      }
-      if (col === 'date_entered__stand_by__stage' && value !== '' && value != null) {
-        value = parseAnyDate_(value);
-      }
+      HUBSPOT.FINAL_ORDER.forEach(col => {
+        let value;
+        if (CONTACT_COLS.has(col)) {
+          value = contactProps[col] ?? '';
+        } else if (DEAL_COLS.has(col)) {
+          value = dealProps[col] ?? '';
+        } else {
+          value = jobProps[col] ?? '';
+        }
 
-      if (col === 'hs_pipeline' && value) {
-        value = pipelineMap.get(value) || value;
-      }
-      if (col === 'hs_pipeline_stage' && value) {
-        value = stageMap.get(value) || value;
-      }
+        // Fallback full_name if missing
+        if (col === 'full_name') {
+          if (!value) value = buildFullName_(contactProps.firstname, contactProps.lastname);
+        }
 
-      row[col] = value;
-    }
+        // Standardize phone format
+        if (col === 'phone' && value) {
+          value = normalizePhone_(value);
+        }
 
-    combined.push(row);
-  }
+        // Robust date parsing for job_agreement_date_1
+        if (col === 'job_agreement_date_1' && value !== '' && value != null) {
+          value = parseAnyDate_(value);
+        }
+        if (col === 'state' && value) {
+          value = normalizeState_(value);
+        }
+        if (col === 'update_date' && value !== '' && value != null) {
+          value = parseAnyDate_(value);
+        }
+        if (col === 'date_entered__stand_by__stage' && value !== '' && value != null) {
+          value = parseAnyDate_(value);
+        }
+
+        // Translate pipeline/stage ids → labels if present
+        if (col === 'hs_pipeline' && value)       value = pipelineMap.get(value) || value;
+        if (col === 'hs_pipeline_stage' && value) value = stageMap.get(value)    || value;
+
+        row[col] = value;
+      });
+      return row;
+    });
 
   // 6) Write without wiping other columns
   writeSelective_(HUBSPOT.SHEET_NAME, combined, HUBSPOT.FINAL_ORDER);
@@ -187,26 +187,19 @@ function syncHubSpotJobsAndDeals() {
   SpreadsheetApp.getUi().alert(`Synced ${combined.length} HubSpot job rows to "${HUBSPOT.SHEET_NAME}".`);
 }
 
+
 // ============ HELPERS ============
 
 function getHubSpotToken_() {
-  const props = PropertiesService.getScriptProperties();
-  const propUpper = props.getProperty('HUBSPOT_TOKEN');
-  if (propUpper && propUpper.trim()) return propUpper.trim();
-  const propLower = props.getProperty('hubspot_token');
-  if (propLower && propLower.trim()) return propLower.trim();
+  const prop = PropertiesService.getScriptProperties().getProperty('HUBSPOT_TOKEN');
+  if (prop && prop.trim()) return prop.trim();
   if (HUBSPOT.TOKEN_INLINE && HUBSPOT.TOKEN_INLINE.trim()) return HUBSPOT.TOKEN_INLINE.trim();
   throw new Error('No HubSpot token. Set Script Property HUBSPOT_TOKEN or HUBSPOT.TOKEN_INLINE.');
 }
 
-function buildFullName_(first, last) {
-  const f = first ? String(first).trim() : '';
-  const l = last ? String(last).trim() : '';
-  return [f, l].filter(Boolean).join(' ');
-}
-
 /**
  * Generic fetch for HubSpot objects with pagination.
+ * objectType can be 'deals' or a custom object type id like '2-41941336'
  */
 function fetchHubspotData_(token, objectType, properties) {
   const props = properties.join(',');
@@ -225,13 +218,21 @@ function fetchHubspotData_(token, objectType, properties) {
   return out;
 }
 
+function buildFullName_(first, last) {
+  const f = first ? String(first).trim() : '';
+  const l = last ? String(last).trim() : '';
+  return [f, l].filter(Boolean).join(' ');
+}
+
 /**
  * Search API fetch with server-side filters (OR between filter groups).
+ * filterGroups is an array of filter objects, one per group.
  */
 function fetchHubspotDataSearchFiltered_(token, objectType, properties, filtersOrGroups) {
   const out = [];
   let after = null;
 
+  // Build filter groups (each group is OR)
   const filterGroups = (filtersOrGroups || []).map(f => ({
     filters: [f]
   }));
@@ -263,7 +264,7 @@ function fetchHubspotDataSearchFiltered_(token, objectType, properties, filtersO
  * Fetch contacts by id (batch).
  */
 function fetchContactsByIds_(token, contactIds, properties) {
-  const map = new Map();
+  const map = new Map(); // contactId -> properties
   if (!contactIds.length) return map;
 
   const url = 'https://api.hubapi.com/crm/v3/objects/contacts/batch/read';
@@ -282,6 +283,7 @@ function fetchContactsByIds_(token, contactIds, properties) {
       map.set(String(c.id), c.properties || {});
     }
   }
+
   return map;
 }
 
@@ -299,8 +301,8 @@ function fetchPipelineLabels_(token, objectTypeId) {
   const resp = hubspotFetch_(url, token);
   const data = JSON.parse(resp.getContentText());
 
-  const pipelineMap = new Map();
-  const stageMap    = new Map();
+  const pipelineMap = new Map(); // pipeline id → label
+  const stageMap    = new Map(); // stage id → label
 
   for (const pipe of (data?.results || [])) {
     pipelineMap.set(pipe.id, pipe.label);
@@ -316,9 +318,11 @@ function normalizePhone_(value) {
   const raw = String(value).trim();
   if (!raw) return '';
 
+  // Strip everything except digits and leading +
   const hasPlus = raw.startsWith('+');
   const digits = raw.replace(/[^\d]/g, '');
 
+  // If it looks like a US number
   if (digits.length === 10) {
     return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`;
   }
@@ -326,8 +330,78 @@ function normalizePhone_(value) {
     const d = digits.slice(1);
     return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
   }
+
+  // If it started with +, keep as +<digits>
   if (hasPlus) return `+${digits}`;
+
+  // Fallback: return original
   return raw;
+}
+
+/**
+ * Ensure headers, clear only our target columns (below header), and write values.
+ * Preserves any other columns/data in the sheet.
+ */
+function writeSelective_(sheetName, rows, headers) {
+  const ss    = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+
+  // Ensure header row contains id + headers (append missing ones)
+  const needed = ['id', ...headers];
+  const existingHeader = sheet.getLastRow() >= 1
+    ? (sheet.getRange(1,1,1, Math.max(1, sheet.getLastColumn())).getValues()[0] || [])
+    : [];
+
+  const headerIndex = new Map(); // header → 1-based column index
+
+  // Build/append headers
+  needed.forEach(h => {
+    let idx = existingHeader.indexOf(h) + 1; // 1-based
+    if (idx <= 0) {
+      idx = (existingHeader.length) + 1;
+      sheet.getRange(1, idx).setValue(h);
+      existingHeader.push(h);
+    }
+    headerIndex.set(h, idx);
+  });
+
+  // Clear only target columns below header
+  const lastRow = Math.max(2, sheet.getLastRow());
+  needed.forEach(h => {
+    const c = headerIndex.get(h);
+    if (lastRow > 1) sheet.getRange(2, c, lastRow - 1, 1).clearContent();
+  });
+
+  if (!rows || !rows.length) return;
+
+  for (const h of needed) {
+    const col = headerIndex.get(h);
+    const colValues = rows.map(r => formatCellValue_(h === 'id' ? r.id : r[h]));
+    sheet.getRange(2, col, colValues.length, 1).setValues(colValues.map(v => [v]));
+
+    if (h === 'job_agreement_date_1') {
+      sheet.getRange(2, col, colValues.length, 1).setNumberFormat('yyyy-mm-dd;@');
+    }
+  }
+}
+
+function formatCellValue_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) return v;
+  return v == null ? '' : v;
+}
+
+/**
+ * Parse ms, s, or ISO date into Date. If it can't parse, returns the original value.
+ */
+function parseAnyDate_(value) {
+  const asNum = Number(value);
+  if (!Number.isNaN(asNum) && asNum > 0) {
+    const ms = asNum < 2e10 ? asNum * 1000 : asNum;
+    const d = new Date(ms);
+    return isNaN(d) ? value : d;
+  }
+  const d = new Date(String(value));
+  return isNaN(d) ? value : d;
 }
 
 function normalizeState_(value) {
@@ -351,65 +425,6 @@ function normalizeState_(value) {
 
   if (upper.length === 2) return upper;
   return map[upper] || v;
-}
-
-function parseAnyDate_(value) {
-  const asNum = Number(value);
-  if (!Number.isNaN(asNum) && asNum > 0) {
-    const ms = asNum < 2e10 ? asNum * 1000 : asNum;
-    const d = new Date(ms);
-    return isNaN(d) ? value : d;
-  }
-  const d = new Date(String(value));
-  return isNaN(d) ? value : d;
-}
-
-/**
- * Ensure headers, clear only our target columns (below header), and write values.
- */
-function writeSelective_(sheetName, rows, headers) {
-  const ss    = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
-
-  const needed = ['id', ...headers];
-  const existingHeader = sheet.getLastRow() >= 1
-    ? (sheet.getRange(1,1,1, Math.max(1, sheet.getLastColumn())).getValues()[0] || [])
-    : [];
-
-  const headerIndex = new Map();
-
-  needed.forEach(h => {
-    let idx = existingHeader.indexOf(h) + 1;
-    if (idx <= 0) {
-      idx = existingHeader.length + 1;
-      sheet.getRange(1, idx).setValue(h);
-      existingHeader.push(h);
-    }
-    headerIndex.set(h, idx);
-  });
-
-  const lastRow = Math.max(2, sheet.getLastRow());
-  needed.forEach(h => {
-    const c = headerIndex.get(h);
-    if (lastRow > 1) sheet.getRange(2, c, lastRow - 1, 1).clearContent();
-  });
-
-  if (!rows || !rows.length) return;
-
-  for (const h of needed) {
-    const col = headerIndex.get(h);
-    const colValues = rows.map(r => formatCellValue_(h === 'id' ? r.id : r[h]));
-    sheet.getRange(2, col, colValues.length, 1).setValues(colValues.map(v => [v]));
-
-    if (h === 'job_agreement_date_1') {
-      sheet.getRange(2, col, colValues.length, 1).setNumberFormat('yyyy-mm-dd;@');
-    }
-  }
-}
-
-function formatCellValue_(v) {
-  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v)) return v;
-  return v == null ? '' : v;
 }
 
 /**
@@ -444,7 +459,8 @@ function hubspotFetch_(url, token, attempt = 1, options = {}) {
   }
 }
 
-// == SIDEBAR DASHBOARD ====
+
+// ==SIDEBAR DASHBOARD ====
 function showSidebar() {
   const html = HtmlService.createHtmlOutputFromFile('Sidebar')
     .setTitle('Pipeline Stage Summary');
@@ -452,8 +468,8 @@ function showSidebar() {
 }
 
 function getStageSummary() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Active Projects');
-  if (!sheet) return { rows: [], total: 0 };
+  const ss = SpreadsheetApp.openById(SpreadsheetApp.getActive().getId());
+  const sheet = ss.getSheetByName('Active Projects');
   const lastRow = sheet.getLastRow();
   if (lastRow < 12) return { rows: [], total: 0 };
 
@@ -499,4 +515,28 @@ function getStageSummary() {
 
   return { rows, total };
 }
-// Updated by Codex on 2026-02-04
+
+function debugStageSummary() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Active Projects');
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+
+  const header = sheet.getRange(11, 1, 1, lastCol).getValues()[0];
+  Logger.log('Header row 11: ' + JSON.stringify(header));
+
+  const normalized = header.map(h => String(h).trim().toLowerCase());
+  const stageColIndex = normalized.indexOf('stage');
+  Logger.log('Stage col index (0-based): ' + stageColIndex);
+
+  const data = sheet.getRange(12, 1, Math.max(0, lastRow - 11), lastCol).getValues();
+  Logger.log('Row count: ' + data.length);
+
+  // Log first 5 stage values
+  const sample = data.slice(0, 5).map(r => r[stageColIndex]);
+  Logger.log('First 5 stage values: ' + JSON.stringify(sample));
+}
+
+function testStageSummary() {
+  const data = getStageSummary();
+  Logger.log(JSON.stringify(data));
+}// CI deploy test Tue Feb  3 20:54:51 MST 2026
