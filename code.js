@@ -5,7 +5,7 @@
 
 // ============ CONFIG ============
 const HUBSPOT = {
-  TOKEN_INLINE: "",
+  TOKEN_INLINE: PropertiesService.getScriptProperties().getProperty('HUBSPOT_TOKEN'),
   ENABLE_CA_FILTER: true, // set to false to disable server-side CA filtering
   JOBS_OBJECT_TYPE_ID: '2-41941336',
   JOBS_PROPERTIES: [
@@ -190,12 +190,12 @@ function syncHubSpotJobsAndDeals() {
 
 // ============ HELPERS ============
 
-function getHubSpotToken_() {
-  const prop = PropertiesService.getScriptProperties().getProperty('HUBSPOT_TOKEN');
-  if (prop && prop.trim()) return prop.trim();
-  if (HUBSPOT.TOKEN_INLINE && HUBSPOT.TOKEN_INLINE.trim()) return HUBSPOT.TOKEN_INLINE.trim();
-  throw new Error('No HubSpot token. Set Script Property HUBSPOT_TOKEN or HUBSPOT.TOKEN_INLINE.');
+function getHubspotToken_() {
+  const t = PropertiesService.getScriptProperties().getProperty('HUBSPOT_TOKEN');
+  if (!t) throw new Error('Missing Script Property HUBSPOT_TOKEN');
+  return t.trim();
 }
+
 
 /**
  * Generic fetch for HubSpot objects with pagination.
@@ -539,4 +539,4 @@ function debugStageSummary() {
 function testStageSummary() {
   const data = getStageSummary();
   Logger.log(JSON.stringify(data));
-}// CI deploy test Tue Feb  3 20:54:51 MST 2026
+}// CI deploy test Tue Feb  4
